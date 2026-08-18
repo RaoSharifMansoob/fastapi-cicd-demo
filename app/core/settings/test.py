@@ -14,4 +14,3 @@ class TestAppSettings(AppSettings):
     secret_key: SecretStr = SecretStr("secret-test")
     db_url: PostgresDsn = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
     logging_level: int = logging.DEBUG
-    
