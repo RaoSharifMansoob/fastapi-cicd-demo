@@ -16,7 +16,6 @@ permissions:
 jobs:
   ci:
     name: Continuous Integration
-
     runs-on: ubuntu-latest
 
     steps:
@@ -27,7 +26,6 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-          cache: poetry
 
       - name: Verify Python installation
         run: |
