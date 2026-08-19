@@ -10,14 +10,13 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     services:
       postgresql:
@@ -35,121 +34,38 @@ jobs:
           --health-retries=5
 
     steps:
-      # --------------------------------------------------
-      # 1. Checkout repository
-      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 2. Debug GitHub context
-      # --------------------------------------------------
-      - name: Debug GitHub context
-        run: |
-          echo "Repository: ${{ github.repository }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Ref name: ${{ github.ref_name }}"
-          echo "Event: ${{ github.event_name }}"
-          echo "Actor: ${{ github.actor }}"
-
-      # --------------------------------------------------
-      # 3. Debug GitHub OIDC claims
-      # --------------------------------------------------
-      - name: Debug OIDC claims
-        shell: bash
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
-        run: |
-          set -e
-
-          echo "Requesting GitHub OIDC token..."
-
-          TOKEN=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-            | python -c "import sys, json; print(json.load(sys.stdin)['value'])")
-
-          echo "OIDC token received."
-
-          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f 2)
-
-          # Add required base64 padding
-          PADDING=$((4 - ${#PAYLOAD} % 4))
-
-          if [ "$PADDING" -ne 4 ]; then
-            PAYLOAD="${PAYLOAD}$(printf '=%.0s' $(seq 1 $PADDING))"
-          fi
-
-          echo "Decoded OIDC claims:"
-          echo "$PAYLOAD" | tr '_-' '/+' | base64 -d | python -m json.tool
-
-      # --------------------------------------------------
-      # 4. Configure AWS credentials using OIDC
-      # --------------------------------------------------
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::949049116271:role/GitHubActionsECRPushRole
-          aws-region: ap-south-1
-
-      # --------------------------------------------------
-      # 5. Verify AWS identity
-      # --------------------------------------------------
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-
-      # --------------------------------------------------
-      # 6. Set up Python
-      # --------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      # --------------------------------------------------
-      # 7. Install Poetry
-      # --------------------------------------------------
       - name: Install Poetry
         run: |
           python -m pip install --upgrade pip
           pip install poetry
 
-      # --------------------------------------------------
-      # 8. Verify Poetry
-      # --------------------------------------------------
       - name: Verify Poetry
         run: poetry --version
 
-      # --------------------------------------------------
-      # 9. Install dependencies
-      # --------------------------------------------------
       - name: Install dependencies
         run: poetry install
 
-      # --------------------------------------------------
-      # 10. Verify PostgreSQL
-      # --------------------------------------------------
       - name: Verify PostgreSQL
         env:
           PGPASSWORD: postgres
         run: |
           pg_isready -h localhost -p 5432 -U postgres
-
           psql -h localhost -p 5432 -U postgres -d postgres \
             -c "SELECT version();"
 
-      # --------------------------------------------------
-      # 11. Run database migrations
-      # --------------------------------------------------
       - name: Run database migrations
         env:
           APP_ENV: test
         run: poetry run alembic upgrade head
 
-      # --------------------------------------------------
-      # 12. Verify database schema
-      # --------------------------------------------------
       - name: Verify database schema
         env:
           PGPASSWORD: postgres
@@ -157,18 +73,54 @@ jobs:
           psql -h localhost -p 5432 -U postgres -d postgres \
             -c "\dt"
 
-      # --------------------------------------------------
-      # 13. Run tests
-      # --------------------------------------------------
       - name: Run tests
         env:
           APP_ENV: test
         run: poetry run pytest -v -s
 
-      # --------------------------------------------------
-      # 14. Run Ruff linting
-      # --------------------------------------------------
       - name: Run Ruff linting
         run: poetry run ruff check .
 
-        
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::949049116271:role/GitHubActionsECRPushRole
+          aws-region: ap-south-1
+          audience: sts.amazonaws.com
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: 949049116271.dkr.ecr.ap-south-1.amazonaws.com
+          ECR_REPOSITORY: fastapi-cicd-demo
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+
+      - name: Push Docker image to Amazon ECR
+        env:
+          ECR_REGISTRY: 949049116271.dkr.ecr.ap-south-1.amazonaws.com
+          ECR_REPOSITORY: fastapi-cicd-demo
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
