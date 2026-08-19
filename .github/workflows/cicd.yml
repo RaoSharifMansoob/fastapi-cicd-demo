@@ -102,7 +102,6 @@ jobs:
           audience: sts.amazonaws.com
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
@@ -124,3 +123,80 @@ jobs:
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REGISTRY: 949049116271.dkr.ecr.ap-south-1.amazonaws.com
+          ECR_REPOSITORY: fastapi-cicd-demo
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+          ssh \
+            -i ~/.ssh/ec2_key \
+            -o StrictHostKeyChecking=yes \
+            ubuntu@"$EC2_HOST" << EOF
+
+            set -e
+
+            echo "Logging in to Amazon ECR..."
+
+            aws ecr get-login-password \
+              --region ap-south-1 | \
+              docker login \
+              --username AWS \
+              --password-stdin \
+              $ECR_REGISTRY
+
+            echo "Pulling Docker image..."
+
+            docker pull \
+              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+            echo "Stopping existing container..."
+
+            docker rm -f fastapi-app 2>/dev/null || true
+
+            echo "Starting new container..."
+
+            docker run -d \
+              --name fastapi-app \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+            echo "Waiting for application..."
+
+            sleep 5
+
+            echo "Checking container status..."
+
+            docker ps --filter "name=fastapi-app"
+
+            echo "Checking application health..."
+
+            curl --fail \
+              --silent \
+              --show-error \
+              http://localhost:8000/docs \
+              > /dev/null
+
+            echo "Deployment successful."
+
+          EOF
