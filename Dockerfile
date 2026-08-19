@@ -37,7 +37,6 @@ CMD [ "poetry", "run", "python", "-c", "print('development')" ]
 
 ## For production
 FROM base as production
-CMD [ "poetry", "run", "python", "-c", "print('production')" ]
-
+CMD [ "poetry", "run", "uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000" ]
 
 
