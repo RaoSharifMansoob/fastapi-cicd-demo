@@ -137,16 +137,25 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REGISTRY: 949049116271.dkr.ecr.ap-south-1.amazonaws.com
+          ECR_REGISTRY: ://amazonaws.com
           ECR_REPOSITORY: fastapi-cicd-demo
         run: |
+          # Verify secrets exist
+          if [ -z "$EC2_HOST" ]; then
+            echo "Error: EC2_HOST secret is empty or missing."
+            exit 1
+          fi
+          if [ -z "$EC2_SSH_KEY" ]; then
+            echo "Error: EC2_SSH_KEY secret is empty or missing."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
           
-          # Notice the single quotes 'EOF' to prevent local evaluation of variables
           ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=yes ubuntu@"$EC2_HOST" 'EOF'
             set -e
             echo "Logging in to Amazon ECR..."
