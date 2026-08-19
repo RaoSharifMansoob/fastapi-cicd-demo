@@ -35,9 +35,15 @@ jobs:
           --health-retries=5
 
     steps:
+      # --------------------------------------------------
+      # 1. Checkout source code
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
+      # --------------------------------------------------
+      # 2. Debug GitHub context
+      # --------------------------------------------------
       - name: Debug GitHub context
         run: |
           echo "Repository: ${{ github.repository }}"
@@ -46,32 +52,52 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Actor: ${{ github.actor }}"
 
-      - name: Debug OIDC token
-        uses: github/actions-oidc-debugger@main
-        continue-on-error: true
-
+      # --------------------------------------------------
+      # 3. Authenticate GitHub Actions with AWS using OIDC
+      # --------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::949049116271:role/GitHubActionsECRPushRole
           aws-region: ap-south-1
 
+      # --------------------------------------------------
+      # 4. Verify AWS authentication
+      # --------------------------------------------------
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      # --------------------------------------------------
+      # 5. Set up Python
+      # --------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
+      # --------------------------------------------------
+      # 6. Install Poetry
+      # --------------------------------------------------
       - name: Install Poetry
         run: |
           python -m pip install --upgrade pip
           pip install poetry
 
+      # --------------------------------------------------
+      # 7. Verify Poetry
+      # --------------------------------------------------
       - name: Verify Poetry
         run: poetry --version
 
+      # --------------------------------------------------
+      # 8. Install project dependencies
+      # --------------------------------------------------
       - name: Install dependencies
         run: poetry install
 
+      # --------------------------------------------------
+      # 9. Verify PostgreSQL
+      # --------------------------------------------------
       - name: Verify PostgreSQL
         env:
           PGPASSWORD: postgres
@@ -80,11 +106,17 @@ jobs:
           psql -h localhost -p 5432 -U postgres -d postgres \
             -c "SELECT version();"
 
+      # --------------------------------------------------
+      # 10. Run database migrations
+      # --------------------------------------------------
       - name: Run database migrations
         env:
           APP_ENV: test
         run: poetry run alembic upgrade head
 
+      # --------------------------------------------------
+      # 11. Verify database schema
+      # --------------------------------------------------
       - name: Verify database schema
         env:
           PGPASSWORD: postgres
@@ -92,12 +124,16 @@ jobs:
           psql -h localhost -p 5432 -U postgres -d postgres \
             -c "\dt"
 
+      # --------------------------------------------------
+      # 12. Run tests
+      # --------------------------------------------------
       - name: Run tests
         env:
           APP_ENV: test
         run: poetry run pytest -v -s
 
+      # --------------------------------------------------
+      # 13. Run Ruff linting
+      # --------------------------------------------------
       - name: Run Ruff linting
         run: poetry run ruff check .
-
-        
