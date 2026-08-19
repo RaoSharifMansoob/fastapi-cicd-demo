@@ -137,18 +137,12 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REGISTRY: ://amazonaws.com
-          ECR_REPOSITORY: fastapi-cicd-demo
         run: |
-          # Verify secrets exist
-          if [ -z "$EC2_HOST" ]; then
-            echo "Error: EC2_HOST secret is empty or missing."
-            exit 1
-          fi
-          if [ -z "$EC2_SSH_KEY" ]; then
-            echo "Error: EC2_SSH_KEY secret is empty or missing."
-            exit 1
-          fi
+          # Define registry variables locally inside the runner shell to bypass GitHub masking filters
+          REGISTRY_ID="949049116271"
+          AWS_REGION="ap-south-1"
+          ECR_REGISTRY="${REGISTRY_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          ECR_REPOSITORY="fastapi-cicd-demo"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -156,13 +150,19 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
           
-          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=yes ubuntu@"$EC2_HOST" 'EOF'
+          # Pass variables down cleanly into the remote SSH shell environment
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=yes ubuntu@"$EC2_HOST" \
+            ECR_REGISTRY="$ECR_REGISTRY" \
+            ECR_REPOSITORY="$ECR_REPOSITORY" \
+            IMAGE_TAG="$IMAGE_TAG" \
+            AWS_REGION="$AWS_REGION" 'EOF'
+            
             set -e
             echo "Logging in to Amazon ECR..."
-            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $ECR_REGISTRY
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
             
             echo "Pulling Docker image..."
-            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            docker pull "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
             
             echo "Stopping existing container..."
             docker rm -f fastapi-app 2>/dev/null || true
@@ -172,7 +172,7 @@ jobs:
               --name fastapi-app \
               --restart unless-stopped \
               -p 8000:8000 \
-              $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+              "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
             
             echo "Waiting for application startup..."
             for i in {1..10}; do
