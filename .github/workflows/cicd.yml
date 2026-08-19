@@ -36,7 +36,7 @@ jobs:
 
     steps:
       # --------------------------------------------------
-      # 1. Checkout source code
+      # 1. Checkout repository
       # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,7 +53,39 @@ jobs:
           echo "Actor: ${{ github.actor }}"
 
       # --------------------------------------------------
-      # 3. Authenticate GitHub Actions with AWS using OIDC
+      # 3. Debug GitHub OIDC claims
+      # --------------------------------------------------
+      - name: Debug OIDC claims
+        shell: bash
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+        run: |
+          set -e
+
+          echo "Requesting GitHub OIDC token..."
+
+          TOKEN=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | python -c "import sys, json; print(json.load(sys.stdin)['value'])")
+
+          echo "OIDC token received."
+
+          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f 2)
+
+          # Add required base64 padding
+          PADDING=$((4 - ${#PAYLOAD} % 4))
+
+          if [ "$PADDING" -ne 4 ]; then
+            PAYLOAD="${PAYLOAD}$(printf '=%.0s' $(seq 1 $PADDING))"
+          fi
+
+          echo "Decoded OIDC claims:"
+          echo "$PAYLOAD" | tr '_-' '/+' | base64 -d | python -m json.tool
+
+      # --------------------------------------------------
+      # 4. Configure AWS credentials using OIDC
       # --------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -62,13 +94,13 @@ jobs:
           aws-region: ap-south-1
 
       # --------------------------------------------------
-      # 4. Verify AWS authentication
+      # 5. Verify AWS identity
       # --------------------------------------------------
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
       # --------------------------------------------------
-      # 5. Set up Python
+      # 6. Set up Python
       # --------------------------------------------------
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -76,7 +108,7 @@ jobs:
           python-version: "3.12"
 
       # --------------------------------------------------
-      # 6. Install Poetry
+      # 7. Install Poetry
       # --------------------------------------------------
       - name: Install Poetry
         run: |
@@ -84,30 +116,31 @@ jobs:
           pip install poetry
 
       # --------------------------------------------------
-      # 7. Verify Poetry
+      # 8. Verify Poetry
       # --------------------------------------------------
       - name: Verify Poetry
         run: poetry --version
 
       # --------------------------------------------------
-      # 8. Install project dependencies
+      # 9. Install dependencies
       # --------------------------------------------------
       - name: Install dependencies
         run: poetry install
 
       # --------------------------------------------------
-      # 9. Verify PostgreSQL
+      # 10. Verify PostgreSQL
       # --------------------------------------------------
       - name: Verify PostgreSQL
         env:
           PGPASSWORD: postgres
         run: |
           pg_isready -h localhost -p 5432 -U postgres
+
           psql -h localhost -p 5432 -U postgres -d postgres \
             -c "SELECT version();"
 
       # --------------------------------------------------
-      # 10. Run database migrations
+      # 11. Run database migrations
       # --------------------------------------------------
       - name: Run database migrations
         env:
@@ -115,7 +148,7 @@ jobs:
         run: poetry run alembic upgrade head
 
       # --------------------------------------------------
-      # 11. Verify database schema
+      # 12. Verify database schema
       # --------------------------------------------------
       - name: Verify database schema
         env:
@@ -125,7 +158,7 @@ jobs:
             -c "\dt"
 
       # --------------------------------------------------
-      # 12. Run tests
+      # 13. Run tests
       # --------------------------------------------------
       - name: Run tests
         env:
@@ -133,7 +166,7 @@ jobs:
         run: poetry run pytest -v -s
 
       # --------------------------------------------------
-      # 13. Run Ruff linting
+      # 14. Run Ruff linting
       # --------------------------------------------------
       - name: Run Ruff linting
         run: poetry run ruff check .
