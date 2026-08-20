@@ -111,6 +111,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
+            --target production \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
             .
@@ -219,26 +220,22 @@ jobs:
             -p 8000:8000 \
             "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-          echo "=== Checking container ==="
-
-          sleep 5
-
-          docker ps -a
-
-          echo "=== Container logs ==="
-
-          docker logs fastapi-app
-
           echo "=== Checking application ==="
 
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            http://127.0.0.1:8000/docs \
-            > /dev/null
+          for i in {1..15}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/docs > /dev/null; then
+              echo "=== DEPLOYMENT SUCCESSFUL ==="
+              exit 0
+            fi
+            echo "Application not ready yet... attempt $i/15"
+            sleep 2
+          done
 
-          echo "=== DEPLOYMENT SUCCESSFUL ==="
+          echo "=== DEPLOYMENT FAILED ==="
+          echo "=== Checking container status ==="
+          docker ps -a
+          echo "=== Container logs ==="
+          docker logs fastapi-app
+          exit 1
 
           REMOTE_SCRIPT
-          
