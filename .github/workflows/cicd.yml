@@ -132,21 +132,55 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/cicd-implementation'
 
     steps:
-      - name: Deploy to EC2
+      - name: Diagnose and deploy to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          set -e
+          set -euxo pipefail
 
+          echo "=== STEP 1: Check SSH directory ==="
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
+          echo "=== STEP 2: Create SSH key ==="
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
 
+          echo "=== STEP 3: Check key file ==="
+          ls -l ~/.ssh/ec2_key
+          ssh-keygen -y -f ~/.ssh/ec2_key > /dev/null
+
+          echo "=== STEP 4: Check EC2 host ==="
+          echo "EC2 host is configured."
+
+          echo "=== STEP 5: Scan SSH host ==="
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+          echo "=== STEP 6: Test SSH connection ==="
+          ssh \
+            -i ~/.ssh/ec2_key \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            ubuntu@"$EC2_HOST" \
+            "echo 'SSH CONNECTION SUCCESSFUL'"
+
+          echo "=== STEP 7: Test AWS identity on EC2 ==="
+          ssh \
+            -i ~/.ssh/ec2_key \
+            -o StrictHostKeyChecking=yes \
+            ubuntu@"$EC2_HOST" \
+            "aws sts get-caller-identity"
+
+          echo "=== STEP 8: Test Docker on EC2 ==="
+          ssh \
+            -i ~/.ssh/ec2_key \
+            -o StrictHostKeyChecking=yes \
+            ubuntu@"$EC2_HOST" \
+            "docker --version"
+
+          echo "=== STEP 9: Deploy ==="
 
           ssh \
             -i ~/.ssh/ec2_key \
@@ -160,7 +194,7 @@ jobs:
           ECR_REGISTRY="949049116271.dkr.ecr.ap-south-1.amazonaws.com"
           ECR_REPOSITORY="fastapi-cicd-demo"
 
-          echo "Logging in to Amazon ECR..."
+          echo "=== Logging into ECR ==="
 
           aws ecr get-login-password \
             --region "$AWS_REGION" \
@@ -168,16 +202,16 @@ jobs:
               --username AWS \
               --password-stdin "$ECR_REGISTRY"
 
-          echo "Pulling image: $IMAGE_TAG"
+          echo "=== Pulling image ==="
 
           docker pull \
             "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-          echo "Stopping existing container..."
+          echo "=== Removing old container ==="
 
           docker rm -f fastapi-app 2>/dev/null || true
 
-          echo "Starting new container..."
+          echo "=== Starting new container ==="
 
           docker run -d \
             --name fastapi-app \
@@ -185,36 +219,25 @@ jobs:
             -p 8000:8000 \
             "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-          echo "Waiting for application..."
+          echo "=== Checking container ==="
 
-          for i in {1..15}; do
+          sleep 5
 
-            if curl \
-              --fail \
-              --silent \
-              --show-error \
-              http://127.0.0.1:8000/docs \
-              > /dev/null; then
-
-              echo "Deployment successful."
-              exit 0
-
-            fi
-
-            echo "Application not ready yet... attempt $i/15"
-
-            sleep 2
-
-          done
-
-          echo "Deployment failed."
-
-          echo "Container status:"
           docker ps -a
 
-          echo "Container logs:"
+          echo "=== Container logs ==="
+
           docker logs fastapi-app
 
-          exit 1
+          echo "=== Checking application ==="
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            http://127.0.0.1:8000/docs \
+            > /dev/null
+
+          echo "=== DEPLOYMENT SUCCESSFUL ==="
 
           REMOTE_SCRIPT
