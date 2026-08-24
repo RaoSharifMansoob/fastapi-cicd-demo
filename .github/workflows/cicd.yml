@@ -47,31 +47,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install poetry
 
-      - name: Verify Poetry
-        run: poetry --version
-
       - name: Install dependencies
         run: poetry install
-
-      - name: Verify PostgreSQL
-        env:
-          PGPASSWORD: postgres
-        run: |
-          pg_isready -h localhost -p 5432 -U postgres
-          psql -h localhost -p 5432 -U postgres -d postgres \
-            -c "SELECT version();"
 
       - name: Run database migrations
         env:
           APP_ENV: test
         run: poetry run alembic upgrade head
-
-      - name: Verify database schema
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -p 5432 -U postgres -d postgres \
-            -c "\dt"
 
       - name: Run tests
         env:
@@ -149,39 +131,10 @@ jobs:
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
 
-          echo "=== STEP 3: Check key file ==="
-          ls -l ~/.ssh/ec2_key
-          ssh-keygen -y -f ~/.ssh/ec2_key > /dev/null
-
-          echo "=== STEP 4: Check EC2 host ==="
-          echo "EC2 host is configured."
-
-          echo "=== STEP 5: Scan SSH host ==="
+          echo "=== STEP 3: Scan SSH host ==="
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-          echo "=== STEP 6: Test SSH connection ==="
-          ssh \
-            -i ~/.ssh/ec2_key \
-            -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=10 \
-            ubuntu@"$EC2_HOST" \
-            "echo 'SSH CONNECTION SUCCESSFUL'"
-
-          echo "=== STEP 7: Test AWS identity on EC2 ==="
-          ssh \
-            -i ~/.ssh/ec2_key \
-            -o StrictHostKeyChecking=yes \
-            ubuntu@"$EC2_HOST" \
-            "aws sts get-caller-identity"
-
-          echo "=== STEP 8: Test Docker on EC2 ==="
-          ssh \
-            -i ~/.ssh/ec2_key \
-            -o StrictHostKeyChecking=yes \
-            ubuntu@"$EC2_HOST" \
-            "docker --version"
-
-          echo "=== STEP 9: Deploy ==="
+          echo "=== STEP 4: Deploy ==="
 
           ssh \
             -i ~/.ssh/ec2_key \
