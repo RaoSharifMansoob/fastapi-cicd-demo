@@ -15,9 +15,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
+      - name: Set up Python
+        uses: actions/setup-python@v7
         with:
-          config: >-
-            p/python
-            p/owasp-top-ten
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install semgrep
+
+      - name: Verify Semgrep installation
+        run: |
+          semgrep --version
+
+      - name: Run Semgrep SAST
+        run: |
+          semgrep scan \
+            --config auto \
+            --error \
+            .
