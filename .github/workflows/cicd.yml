@@ -14,6 +14,9 @@ jobs:
   sast:
     name: SAST
     uses: ./.github/workflows/sast.yml
+    permissions:
+      contents: read
+      security-events: write
   
   test:
     name: Test
