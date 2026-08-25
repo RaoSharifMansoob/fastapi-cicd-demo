@@ -11,8 +11,13 @@ on:
       - main
 
 jobs:
+  sast:
+    name: SAST
+    uses: ./.github/workflows/sast.yml
+  
   test:
     name: Test
+    needs: sast
     runs-on: ubuntu-latest
 
     permissions:
