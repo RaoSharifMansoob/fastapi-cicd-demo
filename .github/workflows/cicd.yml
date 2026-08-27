@@ -11,13 +11,19 @@ on:
       - main
 
 jobs:
+  start:
+    name: Start
+
   sast:
+    needs: start
+    name: SAST
     uses: ./.github/workflows/sast.yml
     permissions:
       contents: read
       security-events: write
 
   secrets:
+    needs: start
     name: Secrets Detection
     uses: ./.github/workflows/secrets.yml
     permissions:
