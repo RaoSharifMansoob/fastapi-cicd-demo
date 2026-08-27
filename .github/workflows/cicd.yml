@@ -12,8 +12,14 @@ on:
 
 jobs:
   sast:
-    name: SAST
     uses: ./.github/workflows/sast.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  secrets:
+    name: Secrets Detection
+    uses: ./.github/workflows/secrets.yml
     permissions:
       contents: read
       security-events: write
