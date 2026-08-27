@@ -1,0 +1,47 @@
+name: Trivy Filesystem Scan
+
+on:
+  workflow_call:
+
+jobs:
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          TRIVY_VERSION="0.74.0"
+
+          curl -sfL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+
+          tar -xzf trivy.tar.gz trivy
+
+          sudo mv trivy /usr/local/bin/trivy
+
+      - name: Verify Trivy installation
+        run: |
+          trivy --version
+
+      - name: Run Trivy filesystem scan
+        run: |
+          trivy fs . \
+            --scanners vuln,misconfig \
+            --format sarif \
+            --output trivy-fs-results.sarif \
+            --exit-code 0
+
+      - name: Upload Trivy filesystem results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-results.sarif

@@ -1,0 +1,64 @@
+name: Trivy Image Scan
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: "Docker image tag to scan"
+        required: true
+        type: string
+
+jobs:
+  trivy-image:
+    name: Trivy Container Image Scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::949049116271:role/GitHubActionsECRPushRole
+          aws-region: ap-south-1
+          audience: sts.amazonaws.com
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install Trivy
+        run: |
+          TRIVY_VERSION="0.74.0"
+
+          curl -sfL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+
+          tar -xzf trivy.tar.gz trivy
+
+          sudo mv trivy /usr/local/bin/trivy
+
+      - name: Verify Trivy installation
+        run: |
+          trivy --version
+
+      - name: Run Trivy image scan
+        env:
+          ECR_REGISTRY: 949049116271.dkr.ecr.ap-south-1.amazonaws.com
+          ECR_REPOSITORY: fastapi-cicd-demo
+          IMAGE_TAG: ${{ inputs.image-tag }}
+        run: |
+          trivy image \
+            --format sarif \
+            --output trivy-image-results.sarif \
+            --exit-code 0 \
+            "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Upload Trivy image results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-results.sarif

@@ -33,6 +33,13 @@ jobs:
     permissions:
       contents: read
       security-events: write
+
+  trivy-fs:
+    needs: start
+    uses: ./.github/workflows/trivy-fs.yml
+    permissions:
+      contents: read
+      security-events: write
   
   test:
     name: Test
@@ -131,6 +138,17 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
+  trivy-image:
+    name: Trivy Image Scan
+    needs: build
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      image-tag: ${{ github.sha }}
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+  
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
