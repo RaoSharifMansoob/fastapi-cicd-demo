@@ -42,8 +42,8 @@ jobs:
       security-events: write
   
   test:
+    needs: start
     name: Test
-    needs: sast
     runs-on: ubuntu-latest
 
     permissions:
