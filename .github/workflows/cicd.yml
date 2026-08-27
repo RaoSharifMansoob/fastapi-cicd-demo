@@ -13,6 +13,10 @@ on:
 jobs:
   start:
     name: Start
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start CI/CD pipeline
+        run: echo "Starting CI/CD and security scans"
 
   sast:
     needs: start
